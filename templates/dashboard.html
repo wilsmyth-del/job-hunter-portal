@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Job Finder Portal{% endblock %}
+{% block content %}
+<h1>Hey, {{ user.name }}.</h1>
+
+<h2>Your invite codes</h2>
+<p class="muted">Share these with friends. Each code works once.</p>
+{% for c in codes %}
+  <div style="background:#1a202c; border:1px solid {% if c.used_by_user_id %}#2d3748{% else %}#5b6ef5{% endif %};
+              border-radius:6px; padding:0.6rem 1rem; margin-bottom:0.5rem;
+              font-family:monospace; font-size:1.1rem; letter-spacing:0.05em;
+              color:{% if c.used_by_user_id %}#4a5568{% else %}#e2e8f0{% endif %};">
+    {{ c.code }}
+    {% if c.used_by_user_id %}
+      <span style="font-family:-apple-system,sans-serif; font-size:0.75rem; color:#4a5568; margin-left:0.5rem;">used</span>
+    {% endif %}
+  </div>
+{% else %}
+  <p class="muted">No codes yet.</p>
+{% endfor %}
+
+<hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
+
+<h2>Your search queries</h2>
+<ul style="padding-left:1.2rem; color:#a0aec0;">
+{% for q in queries %}
+  <li style="margin-bottom:0.3rem;">{{ q }}</li>
+{% endfor %}
+</ul>
+
+<p class="muted" style="margin-top:1.5rem;">Location: {{ user.location }}</p>
+<p class="muted">Daily digests go to: {{ user.email }}</p>
+{% endblock %}

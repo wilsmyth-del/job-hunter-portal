@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Sign Up — Job Finder Portal{% endblock %}
+{% block content %}
+<h1>Sign Up</h1>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="POST" action="/signup">
+  <label>Invite Code</label>
+  <input type="text" name="invite_code" placeholder="e.g. ALPHA-7X2K" autocomplete="off" autofocus>
+  <button class="btn" type="submit">Continue</button>
+</form>
+{% endblock %}

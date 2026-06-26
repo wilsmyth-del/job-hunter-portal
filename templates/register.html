@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Create Account — Job Finder Portal{% endblock %}
+{% block content %}
+<h1>Create Your Account</h1>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="POST" action="/register">
+  <input type="hidden" name="invite_code" value="{{ invite_code }}">
+
+  <label>Your Name</label>
+  <input type="text" name="name" autofocus>
+
+  <label>Email Address</label>
+  <input type="email" name="email" placeholder="you@email.com">
+
+  <label>Location <span class="muted">(city or region, e.g. Vancouver, BC)</span></label>
+  <input type="text" name="location">
+
+  <label>Search Queries <span class="muted">(one per line, up to 8)</span></label>
+  <textarea name="queries" placeholder="UX designer Vancouver&#10;Product designer remote&#10;UI designer BC"></textarea>
+
+  <button class="btn" type="submit">Create Account</button>
+</form>
+{% endblock %}
