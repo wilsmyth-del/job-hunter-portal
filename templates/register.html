@@ -6,17 +6,20 @@
 <form method="POST" action="/register">
   <input type="hidden" name="invite_code" value="{{ invite_code }}">
 
-  <label>Your Name</label>
-  <input type="text" name="name" autofocus>
+  <label for="name">Your Name</label>
+  <input type="text" id="name" name="name" autofocus required>
 
-  <label>Email Address</label>
-  <input type="email" name="email" placeholder="you@email.com">
+  <label for="email">Email Address</label>
+  <input type="email" id="email" name="email" placeholder="you@email.com" required>
 
-  <label>Location <span class="muted">(city or region, e.g. Vancouver, BC)</span></label>
-  <input type="text" name="location">
+  <label for="location">Location <span class="muted">(city or region, e.g. Vancouver, BC)</span></label>
+  <input type="text" id="location" name="location" required>
 
-  <label>Search Queries <span class="muted">(one per line, up to 8)</span></label>
-  <textarea name="queries" placeholder="UX designer Vancouver&#10;Product designer remote&#10;UI designer BC"></textarea>
+  <label for="password">Password <span class="muted">(at least 8 characters)</span></label>
+  <input type="password" id="password" name="password" required minlength="8">
+
+  <label for="confirm_password">Confirm Password</label>
+  <input type="password" id="confirm_password" name="confirm_password" required minlength="8">
 
   <button class="btn" type="submit">Create Account</button>
 </form>

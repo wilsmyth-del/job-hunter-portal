@@ -27,13 +27,14 @@ def init_db():
     with get_conn() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS users (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT    NOT NULL,
-                email       TEXT    NOT NULL UNIQUE,
-                location    TEXT    NOT NULL,
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                name             TEXT    NOT NULL,
+                email            TEXT    NOT NULL UNIQUE,
+                location         TEXT    NOT NULL,
+                password_hash    TEXT,
                 invite_code_used TEXT,
-                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-                active      INTEGER  DEFAULT 1
+                created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                active           INTEGER  DEFAULT 1
             );
 
             CREATE TABLE IF NOT EXISTS queries (
@@ -49,6 +50,11 @@ def init_db():
                 used_at             DATETIME
             );
         """)
+        # migrate existing DB — add password_hash if not present
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        except Exception:
+            pass
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -73,11 +79,11 @@ def get_user_by_email(email: str):
         return conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
 
 
-def create_user(name: str, email: str, location: str, invite_code_used: str) -> int:
+def create_user(name: str, email: str, location: str, invite_code_used: str, password_hash: str) -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO users (name, email, location, invite_code_used) VALUES (?, ?, ?, ?)",
-            (name, email, location, invite_code_used),
+            "INSERT INTO users (name, email, location, invite_code_used, password_hash) VALUES (?, ?, ?, ?, ?)",
+            (name, email, location, invite_code_used, password_hash),
         )
         return cur.lastrowid
 

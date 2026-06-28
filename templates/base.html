@@ -39,6 +39,11 @@
 </head>
 <body>
   <div class="container">
+    {% if current_user %}
+    <div style="display:flex; justify-content:flex-end; margin-bottom:1.5rem;">
+      <a href="/logout" style="color:#f7fafc; font-weight:700; font-size:0.85rem; text-decoration:none;">Log out</a>
+    </div>
+    {% endif %}
     {% block content %}{% endblock %}
   </div>
 </body>

@@ -22,12 +22,18 @@
 <hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
 
 <h2>Your search queries</h2>
+{% if queries %}
 <ul style="padding-left:1.2rem; color:#a0aec0;">
 {% for q in queries %}
   <li style="margin-bottom:0.3rem;">{{ q }}</li>
 {% endfor %}
 </ul>
+{% else %}
+<p class="muted">No searches set up yet.</p>
+{% endif %}
+<a href="/queries" style="font-size:0.85rem;">Edit searches</a>
 
 <p class="muted" style="margin-top:1.5rem;">Location: {{ user.location }}</p>
 <p class="muted">Daily digests go to: {{ user.email }}</p>
+
 {% endblock %}
