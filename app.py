@@ -13,6 +13,8 @@ Routes:
 """
 
 import os
+import smtplib
+from email.mime.text import MIMEText
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session
 from dotenv import load_dotenv
 from pathlib import Path
@@ -172,6 +174,35 @@ def schedule():
         return redirect(url_for("dashboard"))
     user = db.get_user_by_id(user_id)
     return render_template("schedule.html", user=user, error=None)
+
+
+@app.route("/feedback", methods=["GET", "POST"])
+def feedback():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login_get"))
+    user = db.get_user_by_id(user_id)
+    if request.method == "POST":
+        subject = request.form.get("subject", "").strip()
+        message = request.form.get("message", "").strip()
+        if not subject or not message:
+            return render_template("feedback.html", user=user, error="Please fill in both fields.", sent=False)
+        gmail_user = os.getenv("GMAIL_USER", "")
+        gmail_pass = os.getenv("GMAIL_APP_PASSWORD", "")
+        if gmail_user and gmail_pass:
+            try:
+                msg = MIMEText(f"From: {user['name']} <{user['email']}>\n\n{message}")
+                msg["Subject"] = f"[Job Portal] {subject}"
+                msg["From"]    = gmail_user
+                msg["To"]      = gmail_user
+                msg["Reply-To"] = user["email"]
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+                    smtp.login(gmail_user, gmail_pass)
+                    smtp.send_message(msg)
+            except Exception:
+                pass
+        return render_template("feedback.html", user=user, error=None, sent=True)
+    return render_template("feedback.html", user=user, error=None, sent=False)
 
 
 @app.route("/logout")

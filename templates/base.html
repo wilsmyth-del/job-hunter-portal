@@ -40,7 +40,8 @@
 <body>
   <div class="container">
     {% if current_user %}
-    <div style="display:flex; justify-content:flex-end; margin-bottom:1.5rem;">
+    <div style="display:flex; justify-content:flex-end; gap:1.2rem; margin-bottom:1.5rem;">
+      <a href="/feedback" style="color:#a0aec0; font-size:0.85rem; text-decoration:none;">Feedback</a>
       <a href="/logout" style="color:#f7fafc; font-weight:700; font-size:0.85rem; text-decoration:none;">Log out</a>
     </div>
     {% endif %}

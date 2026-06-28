@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Feedback — Job Finder Portal{% endblock %}
+{% block content %}
+<h1>Feedback & Support</h1>
+
+{% if sent %}
+<div style="background:#1a3a1a; border:1px solid #276227; border-radius:6px; padding:0.75rem 1rem; margin-bottom:1.5rem; color:#9ae69a;">
+  Sent. We'll get back to you when we can — best effort, as promised.
+</div>
+{% endif %}
+
+{% if not sent %}
+<p style="color:#a0aec0; margin-bottom:1.5rem;">
+  Got a bug, a question, or a suggestion? Send it through. No guarantees on response time, but we do read everything.
+</p>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="POST" action="/feedback">
+  <label for="subject">Subject</label>
+  <input type="text" id="subject" name="subject" placeholder="e.g. Bug report, Question, Suggestion" required autofocus>
+
+  <label for="message">Message</label>
+  <textarea id="message" name="message" placeholder="What's on your mind?" required></textarea>
+
+  <p class="muted" style="margin-bottom:1rem;">Replies go to {{ user.email }}</p>
+
+  <button class="btn" type="submit">Send</button>
+</form>
+{% endif %}
+
+<p class="muted" style="margin-top:1rem; text-align:center;">
+  <a href="/dashboard">Back to dashboard</a>
+</p>
+{% endblock %}
