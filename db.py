@@ -50,11 +50,15 @@ def init_db():
                 used_at             DATETIME
             );
         """)
-        # migrate existing DB — add password_hash if not present
-        try:
-            conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-        except Exception:
-            pass
+        # migrate existing DB — add columns if not present
+        for col_sql in [
+            "ALTER TABLE users ADD COLUMN password_hash TEXT",
+            "ALTER TABLE users ADD COLUMN delivery_days TEXT NOT NULL DEFAULT '1111100'",
+        ]:
+            try:
+                conn.execute(col_sql)
+            except Exception:
+                pass
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -86,6 +90,11 @@ def create_user(name: str, email: str, location: str, invite_code_used: str, pas
             (name, email, location, invite_code_used, password_hash),
         )
         return cur.lastrowid
+
+
+def set_delivery_days(user_id: int, bitmask: str):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET delivery_days = ? WHERE id = ?", (bitmask, user_id))
 
 
 # ── Queries ───────────────────────────────────────────────────────────────────

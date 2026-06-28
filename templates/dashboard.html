@@ -33,7 +33,18 @@
 {% endif %}
 <a href="/queries" style="font-size:0.85rem;">Edit searches</a>
 
-<p class="muted" style="margin-top:1.5rem;">Location: {{ user.location }}</p>
-<p class="muted">Daily digests go to: {{ user.email }}</p>
+<hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
+
+{% set day_labels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] %}
+{% set schedule = user.delivery_days if user.delivery_days else "1111100" %}
+{% set active_days = [] %}
+{% for i in range(7) %}{% if schedule[i] == '1' %}{% set _ = active_days.append(day_labels[i]) %}{% endif %}{% endfor %}
+<h2>Delivery schedule</h2>
+<p class="muted">{{ active_days | join(", ") if active_days else "No days selected" }}</p>
+<a href="/schedule" style="font-size:0.85rem;">Edit schedule</a>
+
+<hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
+<p class="muted">Location: {{ user.location }}</p>
+<p class="muted">Digests go to: {{ user.email }}</p>
 
 {% endblock %}

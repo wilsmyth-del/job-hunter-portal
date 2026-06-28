@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Delivery Schedule — Job Finder Portal{% endblock %}
+{% block content %}
+<h1>Delivery Schedule</h1>
+<p style="color:#a0aec0; margin-bottom:1.5rem;">
+  Choose which days you'd like to receive your job digest. Pick one or as many as you like.
+</p>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+{% set days = [("M","Monday"),("T","Tuesday"),("W","Wednesday"),("T","Thursday"),("F","Friday"),("S","Saturday"),("S","Sunday")] %}
+{% set schedule = user.delivery_days if user.delivery_days else "1111100" %}
+
+<form method="POST" action="/schedule">
+  <div style="display:flex; gap:0.5rem; margin-bottom:2rem; flex-wrap:wrap;">
+    {% for i in range(7) %}
+    {% set active = schedule[i] == '1' %}
+    <label style="cursor:pointer;">
+      <input type="checkbox" name="day_{{ i }}" {% if active %}checked{% endif %}
+             style="display:none;" class="day-check" data-index="{{ i }}">
+      <span class="day-pill{% if active %} active{% endif %}"
+            title="{{ days[i][1] }}"
+            style="display:inline-flex; align-items:center; justify-content:center;
+                   width:2.5rem; height:2.5rem; border-radius:50%;
+                   border:2px solid {% if active %}#5b6ef5{% else %}#2d3748{% endif %};
+                   background:{% if active %}#5b6ef5{% else %}transparent{% endif %};
+                   color:{% if active %}#fff{% else %}#4a5568{% endif %};
+                   font-weight:700; font-size:0.9rem; user-select:none;
+                   transition:all 0.15s ease;">
+        {{ days[i][0] }}
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+
+  <button class="btn" type="submit">Save Schedule</button>
+</form>
+
+<p class="muted" style="margin-top:1rem; text-align:center;">
+  <a href="/dashboard">Back to dashboard</a>
+</p>
+
+<script>
+  document.querySelectorAll('.day-check').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      var pill = this.nextElementSibling;
+      if (this.checked) {
+        pill.style.background = '#5b6ef5';
+        pill.style.borderColor = '#5b6ef5';
+        pill.style.color = '#fff';
+      } else {
+        pill.style.background = 'transparent';
+        pill.style.borderColor = '#2d3748';
+        pill.style.color = '#4a5568';
+      }
+    });
+  });
+</script>
+{% endblock %}

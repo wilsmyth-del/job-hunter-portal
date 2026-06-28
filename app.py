@@ -155,6 +155,25 @@ def queries():
     return render_template("queries.html", queries=existing, error=None)
 
 
+@app.route("/schedule", methods=["GET", "POST"])
+def schedule():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login_get"))
+    if request.method == "POST":
+        bitmask = "".join(
+            "1" if request.form.get(f"day_{i}") else "0"
+            for i in range(7)
+        )
+        if "1" not in bitmask:
+            user = db.get_user_by_id(user_id)
+            return render_template("schedule.html", user=user, error="Please select at least one day.")
+        db.set_delivery_days(user_id, bitmask)
+        return redirect(url_for("dashboard"))
+    user = db.get_user_by_id(user_id)
+    return render_template("schedule.html", user=user, error=None)
+
+
 @app.route("/logout")
 def logout():
     session.clear()
