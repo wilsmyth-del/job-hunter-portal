@@ -41,6 +41,7 @@
 {% for i in range(7) %}{% if schedule[i] == '1' %}{% set _ = active_days.append(day_labels[i]) %}{% endif %}{% endfor %}
 <h2>Delivery schedule</h2>
 <p class="muted">{{ active_days | join(", ") if active_days else "No days selected" }}</p>
+<p class="muted" style="font-size:0.8rem; margin-top:0.25rem;">Digests run automatically at 6 am PST.</p>
 <a href="/schedule" style="font-size:0.85rem;">Edit schedule</a>
 
 <hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">

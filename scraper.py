@@ -117,14 +117,15 @@ def is_blocked(job: dict) -> bool:
 
 # ── Email ──────────────────────────────────────────────────────────────────────
 
-def send_digest(user, jobs: list) -> None:
+def send_digest(user, jobs: list, is_test: bool = False) -> None:
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
         log.warning("Gmail not configured — skipping email")
         return
 
     now = datetime.now().strftime("%B %d, %Y")
     count = len(jobs)
-    subject = f"Job Digest — {now} ({count} new listing{'s' if count != 1 else ''})"
+    prefix = "Test: " if is_test else ""
+    subject = f"{prefix}Job Digest — {now} ({count} listing{'s' if count != 1 else ''})"
 
     # Plain text
     lines = [f"Job Digest — {now}", f"{count} new listing{'s' if count != 1 else ''}", ""]
