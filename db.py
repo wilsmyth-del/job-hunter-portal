@@ -4,6 +4,7 @@ db.py — SQLite helpers for job-hunter-portal.
 
 import secrets
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 _CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L
@@ -48,6 +49,13 @@ def init_db():
                 created_by_user_id  INTEGER REFERENCES users(id),
                 used_by_user_id     INTEGER REFERENCES users(id),
                 used_at             DATETIME
+            );
+
+            CREATE TABLE IF NOT EXISTS seen_jobs (
+                user_id  INTEGER NOT NULL REFERENCES users(id),
+                job_id   TEXT    NOT NULL,
+                seen_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, job_id)
             );
         """)
         # migrate existing DB — add columns if not present
@@ -95,6 +103,33 @@ def create_user(name: str, email: str, location: str, invite_code_used: str, pas
 def set_delivery_days(user_id: int, bitmask: str):
     with get_conn() as conn:
         conn.execute("UPDATE users SET delivery_days = ? WHERE id = ?", (bitmask, user_id))
+
+
+def get_users_for_today() -> list:
+    """Return active users whose delivery_days bitmask includes today (0=Mon, 6=Sun)."""
+    today_idx = datetime.now().weekday()
+    with get_conn() as conn:
+        users = conn.execute("SELECT * FROM users WHERE active = 1").fetchall()
+        return [
+            u for u in users
+            if (u["delivery_days"] or "0000000")[today_idx] == "1"
+        ]
+
+
+# ── Seen jobs (per-user deduplication) ───────────────────────────────────────
+
+def is_seen_for_user(user_id: int, job_id: str) -> bool:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT 1 FROM seen_jobs WHERE user_id = ? AND job_id = ?", (user_id, job_id)
+        ).fetchone() is not None
+
+
+def mark_seen_for_user(user_id: int, job_id: str):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO seen_jobs (user_id, job_id) VALUES (?, ?)", (user_id, job_id)
+        )
 
 
 # ── Queries ───────────────────────────────────────────────────────────────────
