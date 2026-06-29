@@ -2,8 +2,6 @@
 
 Invite-only job digest service. Users set up search queries and a weekly delivery schedule; a daily scraper fetches LinkedIn listings and emails new results each morning.
 
-
-
 ---
 
 ## What it does
