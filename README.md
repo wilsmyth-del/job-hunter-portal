@@ -2,7 +2,7 @@
 
 Invite-only job digest service. Users set up search queries and a weekly delivery schedule; a daily scraper fetches LinkedIn listings and emails new results each morning.
 
-Live at [portal-wilsmyth.pythonanywhere.com](https://portal-wilsmyth.pythonanywhere.com)
+
 
 ---
 
