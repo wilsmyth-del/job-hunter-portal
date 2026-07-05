@@ -4,51 +4,142 @@
 <h1>Hey, {{ user.name }}.</h1>
 
 <h2>Your invite codes</h2>
-<p class="muted">Share these with friends. Each code works once.</p>
-{% for c in codes %}
-  <div style="background:#1a202c; border:1px solid {% if c.used_by_user_id %}#2d3748{% else %}#5b6ef5{% endif %};
-              border-radius:6px; padding:0.6rem 1rem; margin-bottom:0.5rem;
-              font-family:monospace; font-size:1.1rem; letter-spacing:0.05em;
-              color:{% if c.used_by_user_id %}#4a5568{% else %}#e2e8f0{% endif %};">
-    {{ c.code }}
-    {% if c.used_by_user_id %}
-      <span style="font-family:-apple-system,sans-serif; font-size:0.75rem; color:#4a5568; margin-left:0.5rem;">used</span>
-    {% endif %}
-  </div>
-{% else %}
-  <p class="muted">No codes yet.</p>
-{% endfor %}
+<details>
+  <summary style="cursor:pointer; color:#a0aec0; font-size:0.85rem; margin-bottom:0.75rem;">Show codes</summary>
+  <p class="muted">Share these with friends. Each code works once.</p>
+  {% for c in codes %}
+    <div style="background:#1a202c; border:1px solid {% if c.used_by_user_id %}#2d3748{% else %}#5b6ef5{% endif %};
+                border-radius:6px; padding:0.6rem 1rem; margin-bottom:0.5rem;
+                font-family:monospace; font-size:1.1rem; letter-spacing:0.05em;
+                color:{% if c.used_by_user_id %}#4a5568{% else %}#e2e8f0{% endif %};">
+      {{ c.code }}
+      {% if c.used_by_user_id %}
+        <span style="font-family:-apple-system,sans-serif; font-size:0.75rem; color:#4a5568; margin-left:0.5rem;">used</span>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="muted">No codes yet.</p>
+  {% endfor %}
+</details>
 
 <hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
 
 <h2>Your search queries</h2>
-{% if queries %}
-<ul style="padding-left:1.2rem; color:#a0aec0;">
-{% for q in queries %}
-  <li style="margin-bottom:0.3rem;">{{ q }}</li>
-{% endfor %}
-</ul>
-{% else %}
-<p class="muted">No searches set up yet.</p>
-{% endif %}
-<a href="/queries" style="font-size:0.85rem;">Edit searches</a>
+<div style="background:#1a202c; border:1px solid #2d3748; border-radius:6px; padding:1rem 1.2rem; margin-bottom:1rem; font-size:0.85rem; color:#a0aec0; line-height:1.6;">
+  <strong style="color:#e2e8f0;">How to write a good search</strong><br>
+  Each field is one search — a job title or keyword, optionally followed by a location.<br><br>
+  <span style="color:#e2e8f0;">Examples:</span><br>
+  &bull; <code style="color:#63b3ed;">UX Designer Vancouver</code> — title + city<br>
+  &bull; <code style="color:#63b3ed;">Software Engineer remote</code> — title + work type<br>
+  &bull; <code style="color:#63b3ed;">Product Manager BC</code> — title + region<br><br>
+  You don't need to use all 6. Uncheck any field to skip it.
+</div>
+
+<form method="POST" action="/queries">
+  {% for i in range(1, 7) %}
+  {% set val = queries[i-1] if queries|length >= i else '' %}
+  {% set active = val != '' or queries|length == 0 %}
+  <div class="query-row" style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
+    <input type="checkbox"
+           name="query_{{ i }}_enabled"
+           class="query-toggle"
+           id="toggle_{{ i }}"
+           {% if active %}checked{% endif %}
+           style="width:1.1rem; height:1.1rem; flex-shrink:0; accent-color:#5b6ef5; cursor:pointer;">
+    <input type="text"
+           name="query_{{ i }}"
+           id="query_{{ i }}"
+           value="{{ val }}"
+           placeholder="e.g. UX Designer Vancouver"
+           {% if not active %}disabled{% endif %}
+           style="margin-bottom:0; flex:1; opacity:{% if active %}1{% else %}0.3{% endif %};">
+  </div>
+  {% endfor %}
+  <button class="btn" type="submit" style="margin-top:0.5rem;">Save Searches</button>
+</form>
 
 <hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
 
 {% set day_labels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] %}
 {% set schedule = user.delivery_days if user.delivery_days else "1111100" %}
-{% set active_days = [] %}
-{% for i in range(7) %}{% if schedule[i] == '1' %}{% set _ = active_days.append(day_labels[i]) %}{% endif %}{% endfor %}
 <h2>Delivery schedule</h2>
-<p class="muted">{{ active_days | join(", ") if active_days else "No days selected" }}</p>
-<p class="muted" style="font-size:0.8rem; margin-top:0.25rem;">Digests run automatically at 6 am PST.</p>
-<a href="/schedule" style="font-size:0.85rem;">Edit schedule</a>
+<p class="muted" style="margin-bottom:1rem;">Pick which days you'd like to receive your job digest.</p>
+
+<form method="POST" action="/schedule">
+  <div style="display:flex; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+    {% for i in range(7) %}
+    {% set active = schedule[i] == '1' %}
+    <label style="cursor:pointer;">
+      <input type="checkbox" name="day_{{ i }}" {% if active %}checked{% endif %}
+             style="display:none;" class="day-check" data-index="{{ i }}">
+      <span class="day-pill{% if active %} active{% endif %}"
+            title="{{ day_labels[i] }}"
+            style="display:inline-flex; align-items:center; justify-content:center;
+                   width:2.5rem; height:2.5rem; border-radius:50%;
+                   border:2px solid {% if active %}#5b6ef5{% else %}#2d3748{% endif %};
+                   background:{% if active %}#5b6ef5{% else %}transparent{% endif %};
+                   color:{% if active %}#fff{% else %}#4a5568{% endif %};
+                   font-weight:700; font-size:0.9rem; user-select:none;
+                   transition:all 0.15s ease;">
+        {{ day_labels[i][0] }}
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+  <button class="btn" type="submit">Save Schedule</button>
+</form>
+
+<p class="muted" style="font-size:0.8rem; margin-top:0.75rem;">
+  Digests go out once a day at 14:00 UTC — that's 7am Pacific Daylight Time (summer) or 6am Pacific Standard Time (winter), whichever is currently in effect. Saving a change here doesn't send anything right away — it takes effect at the next run on one of your selected days, which could be tomorrow or up to a week away depending on what you picked.
+</p>
 
 <hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
-<p class="muted">Location: {{ user.location }}</p>
+
+<h2>Location</h2>
+<p class="muted" style="margin-bottom:1rem;">Used to match your search results to your area.</p>
+<form method="POST" action="/location">
+  <select name="location_select" id="location_select" onchange="document.getElementById('location_other_row').style.display = this.value === 'other' ? 'block' : 'none';">
+    {% for choice in location_choices %}
+      <option value="{{ choice }}" {% if user.location == choice %}selected{% endif %}>{{ choice }}</option>
+    {% endfor %}
+    <option value="other" {% if user.location not in location_choices %}selected{% endif %}>Other (type it in)</option>
+  </select>
+  <div id="location_other_row" style="display:{% if user.location not in location_choices %}block{% else %}none{% endif %};">
+    <input type="text" name="location_other" placeholder="City, Province/State" value="{% if user.location not in location_choices %}{{ user.location }}{% endif %}">
+    <p class="muted" style="font-size:0.8rem; margin-top:-0.5rem;">Free text isn't checked against anything — double-check the spelling, or LinkedIn may quietly return unrelated results.</p>
+  </div>
+  <button class="btn" type="submit">Save Location</button>
+</form>
+
+<hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
 <p class="muted">Digests go to: {{ user.email }}</p>
 
 <hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
 <p class="muted" style="text-align:center;">Need a break? <a href="https://wilsmyth.pythonanywhere.com" target="_blank">Play some Chess</a> ♟</p>
 
+<script>
+  document.querySelectorAll('.query-toggle').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      var row = this.closest('.query-row');
+      var input = row.querySelector('input[type="text"]');
+      input.disabled = !this.checked;
+      input.style.opacity = this.checked ? '1' : '0.3';
+    });
+  });
+
+  document.querySelectorAll('.day-check').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      var pill = this.nextElementSibling;
+      if (this.checked) {
+        pill.style.background = '#5b6ef5';
+        pill.style.borderColor = '#5b6ef5';
+        pill.style.color = '#fff';
+      } else {
+        pill.style.background = 'transparent';
+        pill.style.borderColor = '#2d3748';
+        pill.style.color = '#4a5568';
+      }
+    });
+  });
+</script>
 {% endblock %}

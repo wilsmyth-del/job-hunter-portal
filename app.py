@@ -6,8 +6,14 @@ Routes:
     GET  /signup            Invite code entry form
     POST /signup            Validate code, render registration form
     POST /register          Create account
-    GET  /dashboard         User dashboard
+    GET  /dashboard         User dashboard (queries, schedule, location all inline)
+    POST /queries           Save search queries
+    POST /schedule          Save delivery days
+    POST /location          Save location
     GET  /api/users         Scraper polling endpoint — X-Api-Key auth, returns active users + queries
+    GET  /admin/login       Admin passphrase form
+    POST /admin/login       Check passphrase, start admin session
+    GET  /admin/logout      End admin session
     GET  /admin             Admin panel — seed codes, view users
     POST /admin/generate    Generate N seed codes
 """
@@ -15,7 +21,7 @@ Routes:
 import os
 import smtplib
 from email.mime.text import MIMEText
-from flask import Flask, render_template, request, redirect, url_for, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
 from dotenv import load_dotenv
 from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -25,7 +31,25 @@ import db
 load_dotenv(Path(__file__).parent / ".env")
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "dev-change-this")
+
+_secret_key = os.getenv("SECRET_KEY")
+if not _secret_key or _secret_key == "dev-change-this":
+    raise RuntimeError(
+        "SECRET_KEY environment variable must be set to a real secret value "
+        "(not unset, not 'dev-change-this') before this app will start."
+    )
+app.secret_key = _secret_key
+
+LOCATION_CHOICES = [
+    "Vancouver, BC",
+    "Burnaby, BC",
+    "Surrey, BC",
+    "New Westminster, BC",
+    "Richmond, BC",
+    "Coquitlam, BC",
+    "British Columbia",
+    "Canada",
+]
 
 
 @app.before_request
@@ -133,47 +157,61 @@ def dashboard():
         return redirect(url_for("signup_get"))
     queries = db.get_queries_for_user(user_id)
     codes   = db.get_codes_for_user(user_id)
-    return render_template("dashboard.html", user=user, queries=queries, codes=codes)
+    return render_template(
+        "dashboard.html", user=user, queries=queries, codes=codes,
+        location_choices=LOCATION_CHOICES,
+    )
 
 
-@app.route("/queries", methods=["GET", "POST"])
+@app.route("/queries", methods=["POST"])
 def queries():
     user_id = session.get("user_id")
     if not user_id:
         return redirect(url_for("login_get"))
-    if request.method == "POST":
-        query_list = []
-        for i in range(1, 7):
-            enabled = request.form.get(f"query_{i}_enabled")
-            val = request.form.get(f"query_{i}", "").strip()
-            if enabled and val:
-                query_list.append(val)
-        if not query_list:
-            existing = [request.form.get(f"query_{i}", "") for i in range(1, 7)]
-            return render_template("queries.html", queries=existing, error="Please enable and fill in at least one search query.")
-        db.set_queries_for_user(user_id, query_list)
+    query_list = []
+    for i in range(1, 7):
+        enabled = request.form.get(f"query_{i}_enabled")
+        val = request.form.get(f"query_{i}", "").strip()
+        if enabled and val:
+            query_list.append(val)
+    if not query_list:
+        flash("Please enable and fill in at least one search query.", "queries")
         return redirect(url_for("dashboard"))
-    existing = db.get_queries_for_user(user_id)
-    return render_template("queries.html", queries=existing, error=None)
+    db.set_queries_for_user(user_id, query_list)
+    return redirect(url_for("dashboard"))
 
 
-@app.route("/schedule", methods=["GET", "POST"])
+@app.route("/schedule", methods=["POST"])
 def schedule():
     user_id = session.get("user_id")
     if not user_id:
         return redirect(url_for("login_get"))
-    if request.method == "POST":
-        bitmask = "".join(
-            "1" if request.form.get(f"day_{i}") else "0"
-            for i in range(7)
-        )
-        if "1" not in bitmask:
-            user = db.get_user_by_id(user_id)
-            return render_template("schedule.html", user=user, error="Please select at least one day.")
-        db.set_delivery_days(user_id, bitmask)
+    bitmask = "".join(
+        "1" if request.form.get(f"day_{i}") else "0"
+        for i in range(7)
+    )
+    if "1" not in bitmask:
+        flash("Please select at least one day.", "schedule")
         return redirect(url_for("dashboard"))
-    user = db.get_user_by_id(user_id)
-    return render_template("schedule.html", user=user, error=None)
+    db.set_delivery_days(user_id, bitmask)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/location", methods=["POST"])
+def location():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login_get"))
+    selected = request.form.get("location_select", "")
+    if selected == "other":
+        new_location = request.form.get("location_other", "").strip()
+    else:
+        new_location = selected.strip()
+    if not new_location or len(new_location) > 100:
+        flash("Please choose or enter a valid location.", "location")
+        return redirect(url_for("dashboard"))
+    db.set_location(user_id, new_location)
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/feedback", methods=["GET", "POST"])
@@ -234,14 +272,30 @@ def api_users():
 # ── Admin ─────────────────────────────────────────────────────────────────────
 
 def _admin_authed():
-    admin_key = os.getenv("ADMIN_KEY", "")
-    return admin_key and request.args.get("key") == admin_key
+    return session.get("is_admin", False)
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "POST":
+        admin_key = os.getenv("ADMIN_KEY", "")
+        if admin_key and request.form.get("key") == admin_key:
+            session["is_admin"] = True
+            return redirect(url_for("admin"))
+        return render_template("admin_login.html", error="Wrong key.")
+    return render_template("admin_login.html", error=None)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("is_admin", None)
+    return redirect(url_for("admin_login"))
 
 
 @app.route("/admin")
 def admin():
     if not _admin_authed():
-        return "Forbidden", 403
+        return redirect(url_for("admin_login"))
     users = db.get_all_users()
     codes = db.get_all_codes()
     new_codes = request.args.getlist("new_codes")
@@ -251,14 +305,13 @@ def admin():
 @app.route("/admin/generate", methods=["POST"])
 def admin_generate():
     if not _admin_authed():
-        return "Forbidden", 403
+        return redirect(url_for("admin_login"))
     try:
         n = min(int(request.form.get("count", 1)), 20)
     except ValueError:
         n = 1
     new_codes = db.generate_codes(n, created_by_user_id=None)
-    key = request.args.get("key", "")
-    return redirect(url_for("admin", key=key, new_codes=new_codes))
+    return redirect(url_for("admin", new_codes=new_codes))
 
 
 if __name__ == "__main__":

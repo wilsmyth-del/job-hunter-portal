@@ -105,6 +105,11 @@ def set_delivery_days(user_id: int, bitmask: str):
         conn.execute("UPDATE users SET delivery_days = ? WHERE id = ?", (bitmask, user_id))
 
 
+def set_location(user_id: int, location: str):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET location = ? WHERE id = ?", (location, user_id))
+
+
 def get_users_for_today() -> list:
     """Return active users whose delivery_days bitmask includes today (0=Mon, 6=Sun)."""
     today_idx = datetime.now().weekday()

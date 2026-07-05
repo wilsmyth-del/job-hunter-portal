@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Admin Login — Job Finder Portal{% endblock %}
+{% block content %}
+<h1>Admin Login</h1>
+
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+<form method="POST" action="/admin/login">
+  <label for="key">Admin key</label>
+  <input type="password" id="key" name="key" required autofocus>
+  <button class="btn" type="submit">Log in</button>
+</form>
+{% endblock %}
