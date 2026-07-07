@@ -10,6 +10,11 @@
   {% else %}
     <p>Your account has been deleted. Check your email for a fresh invite code if you ever want to come back.</p>
   {% endif %}
+{% elif needs_login %}
+  <p>To delete this account we need to confirm it's really you — log in first, then you'll be brought right back here.</p>
+  <p class="muted" style="margin-bottom:1rem;">{{ user.email }}</p>
+  <a href="/login?next=/unsubscribe/{{ token }}" class="btn" style="display:block; text-align:center; text-decoration:none;">Log in to confirm</a>
+  <p class="muted" style="margin-top:1rem; text-align:center;">Forgot your password? <a href="/forgot-password">Reset it</a> — the reset link only goes to {{ user.email }}.</p>
 {% else %}
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
   <p class="muted" style="margin-bottom:1rem;">{{ user.email }}</p>

@@ -91,22 +91,32 @@ def index():
     return render_template("index.html")
 
 
+def _safe_next(next_url: str) -> str:
+    """Only allow redirecting back into the unsubscribe flow — anything else
+    is ignored, to avoid this becoming an open redirect."""
+    if next_url and next_url.startswith("/unsubscribe/"):
+        return next_url
+    return ""
+
+
 @app.route("/login", methods=["GET"])
 def login_get():
+    next_url = _safe_next(request.args.get("next", ""))
     if session.get("user_id"):
-        return redirect(url_for("dashboard"))
-    return render_template("login.html", error=None)
+        return redirect(next_url or url_for("dashboard"))
+    return render_template("login.html", error=None, next=next_url)
 
 
 @app.route("/login", methods=["POST"])
 def login_post():
     email    = request.form.get("email", "").strip().lower()
     password = request.form.get("password", "")
+    next_url = _safe_next(request.form.get("next", ""))
     user = db.get_user_by_email(email)
     if not user or not user["password_hash"] or not check_password_hash(user["password_hash"], password):
-        return render_template("login.html", error="Email or password is incorrect.")
+        return render_template("login.html", error="Email or password is incorrect.", next=next_url)
     session["user_id"] = user["id"]
-    return redirect(url_for("dashboard"))
+    return redirect(next_url or url_for("dashboard"))
 
 
 @app.route("/signup", methods=["GET"])
@@ -459,6 +469,13 @@ def unsubscribe(token):
         mode = request.form.get("mode")
         if mode not in ("pause", "delete"):
             return render_template("unsubscribe.html", valid=True, user=user, error="Please choose an option.")
+        # Deletion is permanent (queries/seen_jobs are gone), so the link
+        # alone isn't enough — if the email got forwarded, the forwarder
+        # shouldn't be able to delete an account that isn't theirs. Pausing
+        # is fully reversible, so it stays link-only for the low-friction
+        # "forgot my password, just let me leave" case.
+        if mode == "delete" and session.get("user_id") != user["id"]:
+            return render_template("unsubscribe.html", valid=True, user=user, needs_login=True, token=token)
         _close_account(user, mode)
         return render_template("unsubscribe.html", valid=True, done=True, mode=mode)
     return render_template("unsubscribe.html", valid=True, user=user, error=None)
