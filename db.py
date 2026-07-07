@@ -6,6 +6,9 @@ import secrets
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+PORTAL_TZ = ZoneInfo("America/Vancouver")
 
 _CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L
 
@@ -62,6 +65,10 @@ def init_db():
         for col_sql in [
             "ALTER TABLE users ADD COLUMN password_hash TEXT",
             "ALTER TABLE users ADD COLUMN delivery_days TEXT NOT NULL DEFAULT '1111100'",
+            "ALTER TABLE users ADD COLUMN delivery_hour INTEGER NOT NULL DEFAULT 7",
+            "ALTER TABLE users ADD COLUMN last_run_date TEXT",
+            "ALTER TABLE users ADD COLUMN reset_token TEXT",
+            "ALTER TABLE users ADD COLUMN reset_token_expires TEXT",
         ]:
             try:
                 conn.execute(col_sql)
@@ -105,20 +112,87 @@ def set_delivery_days(user_id: int, bitmask: str):
         conn.execute("UPDATE users SET delivery_days = ? WHERE id = ?", (bitmask, user_id))
 
 
+def set_delivery_hour(user_id: int, hour: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET delivery_hour = ? WHERE id = ?", (hour, user_id))
+
+
 def set_location(user_id: int, location: str):
     with get_conn() as conn:
         conn.execute("UPDATE users SET location = ? WHERE id = ?", (location, user_id))
 
 
-def get_users_for_today() -> list:
-    """Return active users whose delivery_days bitmask includes today (0=Mon, 6=Sun)."""
-    today_idx = datetime.now().weekday()
+def set_name(user_id: int, name: str):
     with get_conn() as conn:
-        users = conn.execute("SELECT * FROM users WHERE active = 1").fetchall()
+        conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
+
+
+def set_active(user_id: int, active: bool):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET active = ? WHERE id = ?", (1 if active else 0, user_id))
+
+
+def delete_user(user_id: int):
+    """Delete a user and their personal data. Invite codes they created or
+    used are kept (for history/attribution of other users' signups) but
+    de-referenced rather than deleted."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM seen_jobs WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM queries WHERE user_id = ?", (user_id,))
+        conn.execute("UPDATE invite_codes SET created_by_user_id = NULL WHERE created_by_user_id = ?", (user_id,))
+        conn.execute("UPDATE invite_codes SET used_by_user_id = NULL WHERE used_by_user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+def set_password(user_id: int, password_hash: str):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+
+
+def set_reset_token(user_id: int, token: str, expires_iso: str):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?",
+            (token, expires_iso, user_id),
+        )
+
+
+def get_user_by_reset_token(token: str):
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM users WHERE reset_token = ?", (token,)).fetchone()
+
+
+def clear_reset_token(user_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET reset_token = NULL, reset_token_expires = NULL WHERE id = ?",
+            (user_id,),
+        )
+
+
+def get_users_for_run(target_hour: int) -> list:
+    """Return active users due for a run right now: delivery_days includes
+    today (local weekday), delivery_hour matches target_hour (local hour),
+    and they haven't already run today (local date) — the same-day guard
+    against an hourly cron firing more than once inside the target hour."""
+    now_local = datetime.now(PORTAL_TZ)
+    weekday_idx = now_local.weekday()
+    today_str = now_local.date().isoformat()
+    with get_conn() as conn:
+        users = conn.execute(
+            "SELECT * FROM users WHERE active = 1 AND delivery_hour = ?", (target_hour,)
+        ).fetchall()
         return [
             u for u in users
-            if (u["delivery_days"] or "0000000")[today_idx] == "1"
+            if (u["delivery_days"] or "0000000")[weekday_idx] == "1"
+            and u["last_run_date"] != today_str
         ]
+
+
+def mark_run_today(user_id: int):
+    today_str = datetime.now(PORTAL_TZ).date().isoformat()
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET last_run_date = ? WHERE id = ?", (today_str, user_id))
 
 
 # ── Seen jobs (per-user deduplication) ───────────────────────────────────────

@@ -10,6 +10,17 @@ Routes:
     POST /queries           Save search queries
     POST /schedule          Save delivery days
     POST /location          Save location
+    POST /search/test       Run saved searches on demand, show results inline
+    GET  /forgot-password   Request a password reset email
+    POST /forgot-password   Send reset email if the address matches an account
+    GET  /reset/<token>     Show new-password form (valid token only)
+    POST /reset/<token>     Set new password, invalidate token
+    POST /account/password  Change password (logged in, current password required)
+    POST /account/name      Update display name
+    POST /account/close     Pause digests or delete account (logged in)
+    POST /account/resume    Resume digests after a pause (logged in)
+    GET  /unsubscribe/<token>   Pause-or-delete choice page (from digest email footer, no login needed)
+    POST /unsubscribe/<token>   Perform the chosen action
     GET  /api/users         Scraper polling endpoint — X-Api-Key auth, returns active users + queries
     GET  /admin/login       Admin passphrase form
     POST /admin/login       Check passphrase, start admin session
@@ -19,7 +30,9 @@ Routes:
 """
 
 import os
+import secrets
 import smtplib
+from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
 from dotenv import load_dotenv
@@ -27,6 +40,8 @@ from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
 
 import db
+from scraper import fetch_linkedin, is_blocked
+from tokens import unsubscribe_token, user_id_from_token
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -39,6 +54,8 @@ if not _secret_key or _secret_key == "dev-change-this":
         "(not unset, not 'dev-change-this') before this app will start."
     )
 app.secret_key = _secret_key
+
+HOUR_CHOICES = [(h, f"{h % 12 or 12}:00 {'AM' if h < 12 else 'PM'}") for h in range(5, 11)]
 
 LOCATION_CHOICES = [
     "Vancouver, BC",
@@ -159,7 +176,7 @@ def dashboard():
     codes   = db.get_codes_for_user(user_id)
     return render_template(
         "dashboard.html", user=user, queries=queries, codes=codes,
-        location_choices=LOCATION_CHOICES,
+        location_choices=LOCATION_CHOICES, hour_choices=HOUR_CHOICES, test_results=None,
     )
 
 
@@ -181,6 +198,33 @@ def queries():
     return redirect(url_for("dashboard"))
 
 
+@app.route("/search/test", methods=["POST"])
+def search_test():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login_get"))
+    user = db.get_user_by_id(user_id)
+    query_list = db.get_queries_for_user(user_id)
+    if not query_list:
+        flash("Save at least one search query first.", "queries")
+        return redirect(url_for("dashboard"))
+
+    seen_urls = set()
+    test_results = []
+    for q in query_list[:6]:
+        for job in fetch_linkedin(q, user["location"]):
+            if job["url"] in seen_urls or is_blocked(job):
+                continue
+            seen_urls.add(job["url"])
+            test_results.append(job)
+
+    codes = db.get_codes_for_user(user_id)
+    return render_template(
+        "dashboard.html", user=user, queries=query_list, codes=codes,
+        location_choices=LOCATION_CHOICES, hour_choices=HOUR_CHOICES, test_results=test_results,
+    )
+
+
 @app.route("/schedule", methods=["POST"])
 def schedule():
     user_id = session.get("user_id")
@@ -193,7 +237,18 @@ def schedule():
     if "1" not in bitmask:
         flash("Please select at least one day.", "schedule")
         return redirect(url_for("dashboard"))
+
+    valid_hours = {h for h, _ in HOUR_CHOICES}
+    try:
+        hour = int(request.form.get("delivery_hour", ""))
+    except ValueError:
+        hour = None
+    if hour not in valid_hours:
+        flash("Please choose a valid delivery time.", "schedule")
+        return redirect(url_for("dashboard"))
+
     db.set_delivery_days(user_id, bitmask)
+    db.set_delivery_hour(user_id, hour)
     return redirect(url_for("dashboard"))
 
 
@@ -241,6 +296,172 @@ def feedback():
                 pass
         return render_template("feedback.html", user=user, error=None, sent=True)
     return render_template("feedback.html", user=user, error=None, sent=False)
+
+
+def _send_mail(to_email: str, subject: str, plain_body: str) -> bool:
+    gmail_user = os.getenv("GMAIL_USER", "")
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD", "")
+    if not gmail_user or not gmail_pass:
+        return False
+    try:
+        msg = MIMEText(plain_body)
+        msg["Subject"] = subject
+        msg["From"] = f"Job Finder <{gmail_user}>"
+        msg["To"] = to_email
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(gmail_user, gmail_pass)
+            smtp.send_message(msg)
+        return True
+    except Exception:
+        return False
+
+
+def _reset_token_valid(user) -> bool:
+    expires = user["reset_token_expires"] if user else None
+    if not expires:
+        return False
+    try:
+        return datetime.utcnow() < datetime.fromisoformat(expires)
+    except ValueError:
+        return False
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if session.get("user_id"):
+        return redirect(url_for("dashboard"))
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        user = db.get_user_by_email(email)
+        if user:
+            token = secrets.token_urlsafe(32)
+            expires = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+            db.set_reset_token(user["id"], token, expires)
+            reset_url = url_for("reset_password", token=token, _external=True)
+            _send_mail(
+                user["email"],
+                "Reset your Job Finder password",
+                f"Hi {user['name']},\n\n"
+                f"Someone (hopefully you) asked to reset your Job Finder password.\n"
+                f"This link works for 1 hour:\n\n{reset_url}\n\n"
+                f"If you didn't request this, you can ignore this email.",
+            )
+        # Same response either way — don't reveal whether the email exists.
+        return render_template("forgot_password.html", sent=True)
+    return render_template("forgot_password.html", sent=False)
+
+
+@app.route("/reset/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    user = db.get_user_by_reset_token(token)
+    if not _reset_token_valid(user):
+        return render_template("reset_password.html", valid=False, error=None)
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        if password != confirm:
+            return render_template("reset_password.html", valid=True, error="Passwords do not match.")
+        if len(password) < 8:
+            return render_template("reset_password.html", valid=True, error="Password must be at least 8 characters.")
+        db.set_password(user["id"], generate_password_hash(password))
+        db.clear_reset_token(user["id"])
+        flash("Password updated — please log in.")
+        return redirect(url_for("login_get"))
+    return render_template("reset_password.html", valid=True, error=None)
+
+
+@app.route("/account/password", methods=["POST"])
+def change_password():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login_get"))
+    user = db.get_user_by_id(user_id)
+    current = request.form.get("current_password", "")
+    new = request.form.get("new_password", "")
+    confirm = request.form.get("confirm_new_password", "")
+    if not user["password_hash"] or not check_password_hash(user["password_hash"], current):
+        flash("Current password is incorrect.", "account")
+        return redirect(url_for("dashboard"))
+    if new != confirm:
+        flash("New passwords do not match.", "account")
+        return redirect(url_for("dashboard"))
+    if len(new) < 8:
+        flash("New password must be at least 8 characters.", "account")
+        return redirect(url_for("dashboard"))
+    db.set_password(user_id, generate_password_hash(new))
+    flash("Password updated.", "account")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/account/name", methods=["POST"])
+def update_name():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login_get"))
+    name = request.form.get("name", "").strip()
+    if not name or len(name) > 100:
+        flash("Please enter a valid name.", "account")
+        return redirect(url_for("dashboard"))
+    db.set_name(user_id, name)
+    return redirect(url_for("dashboard"))
+
+
+def _close_account(user, mode: str):
+    if mode == "pause":
+        db.set_active(user["id"], False)
+        return
+    codes = db.generate_codes(1, created_by_user_id=None)
+    _send_mail(
+        user["email"],
+        "Sorry to see you go — here's a way back in",
+        f"Hi {user['name']},\n\n"
+        f"Your Job Finder account has been deleted, along with your saved searches.\n"
+        f"If you ever want to come back, here's a fresh invite code just for you:\n\n"
+        f"  {codes[0]}\n\n"
+        f"No rush — it doesn't expire.",
+    )
+    db.delete_user(user["id"])
+
+
+@app.route("/account/close", methods=["POST"])
+def account_close():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login_get"))
+    user = db.get_user_by_id(user_id)
+    mode = request.form.get("mode")
+    if mode not in ("pause", "delete"):
+        flash("Please choose an option.", "account")
+        return redirect(url_for("dashboard"))
+    _close_account(user, mode)
+    if mode == "delete":
+        session.clear()
+        return redirect(url_for("index"))
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/account/resume", methods=["POST"])
+def account_resume():
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("login_get"))
+    db.set_active(user_id, True)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/unsubscribe/<token>", methods=["GET", "POST"])
+def unsubscribe(token):
+    user_id = user_id_from_token(token)
+    user = db.get_user_by_id(user_id) if user_id else None
+    if not user:
+        return render_template("unsubscribe.html", valid=False)
+    if request.method == "POST":
+        mode = request.form.get("mode")
+        if mode not in ("pause", "delete"):
+            return render_template("unsubscribe.html", valid=True, user=user, error="Please choose an option.")
+        _close_account(user, mode)
+        return render_template("unsubscribe.html", valid=True, done=True, mode=mode)
+    return render_template("unsubscribe.html", valid=True, user=user, error=None)
 
 
 @app.route("/logout")

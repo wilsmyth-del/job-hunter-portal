@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Portal scraper — runs daily via PythonAnywhere scheduled task.
-Fetches LinkedIn jobs for each user scheduled today, filters against their
-personal seen-job history, and emails new listings.
+Portal scraper — runs hourly via PythonAnywhere scheduled task.
+Each tick, checks which active users' delivery_hour matches the current
+America/Vancouver local hour (DST-correct via zoneinfo) and haven't already
+run today, fetches LinkedIn jobs for them, filters against their personal
+seen-job history, and emails new listings.
 """
 
 import logging
@@ -22,15 +24,20 @@ from dotenv import load_dotenv
 from db import (
     init_db,
     get_queries_for_user,
-    get_users_for_today,
+    get_users_for_run,
+    mark_run_today,
     is_seen_for_user,
     mark_seen_for_user,
+    PORTAL_TZ,
 )
+from tokens import unsubscribe_token
 
 load_dotenv(Path(__file__).parent / ".env")
 
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "").replace(" ", "")
+
+PORTAL_BASE_URL = "https://portal-wilsmyth.pythonanywhere.com"
 
 HEADERS = {
     "User-Agent": (
@@ -126,6 +133,7 @@ def send_digest(user, jobs: list, is_test: bool = False) -> None:
     count = len(jobs)
     prefix = "Test: " if is_test else ""
     subject = f"{prefix}Job Digest — {now} ({count} listing{'s' if count != 1 else ''})"
+    unsub_url = f"{PORTAL_BASE_URL}/unsubscribe/{unsubscribe_token(user['id'])}"
 
     # Plain text
     lines = [f"Job Digest — {now}", f"{count} new listing{'s' if count != 1 else ''}", ""]
@@ -136,6 +144,7 @@ def send_digest(user, jobs: list, is_test: bool = False) -> None:
     lines += [
         "—",
         "To update your searches or schedule, log in at portal-wilsmyth.pythonanywhere.com",
+        f"To pause or delete your account: {unsub_url}",
     ]
     plain = "\n".join(lines)
 
@@ -171,6 +180,8 @@ def send_digest(user, jobs: list, is_test: bool = False) -> None:
     <a href="https://portal-wilsmyth.pythonanywhere.com"
        style="color:#718096;">Job Finder Portal</a>.
     To update your searches or delivery schedule, log in anytime.
+    <br>
+    <a href="{unsub_url}" style="color:#718096;">Pause or delete your account</a>
   </p>
 </body>
 </html>"""
@@ -195,8 +206,9 @@ def send_digest(user, jobs: list, is_test: bool = False) -> None:
 
 def main():
     init_db()
-    today_users = get_users_for_today()
-    log.info(f"Scheduled today: {len(today_users)} user(s)")
+    local_hour = datetime.now(PORTAL_TZ).hour
+    today_users = get_users_for_run(local_hour)
+    log.info(f"Local hour {local_hour}: {len(today_users)} user(s) due")
 
     for user in today_users:
         queries = get_queries_for_user(user["id"])
@@ -204,6 +216,7 @@ def main():
 
         if not queries:
             log.info(f"No queries for {user['email']} — skipping")
+            mark_run_today(user["id"])
             continue
 
         log.info(f"{user['email']}: {len(queries)} queries, location={location!r}")
@@ -229,6 +242,7 @@ def main():
         else:
             log.info(f"Nothing new for {user['email']}")
 
+        mark_run_today(user["id"])
         time.sleep(2)
 
 

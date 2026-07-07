@@ -58,6 +58,36 @@
   <button class="btn" type="submit" style="margin-top:0.5rem;">Save Searches</button>
 </form>
 
+<form method="POST" action="/search/test" style="margin-top:0.75rem;">
+  <button class="btn" type="submit" style="background:#2d3748;">Test My Searches</button>
+</form>
+<p class="muted" style="font-size:0.8rem; margin-top:0.5rem;">
+  Runs your saved searches right now and shows results below — this may take a few seconds, and doesn't affect your scheduled digest or use up your dedup history.
+</p>
+
+{% if test_results is not none %}
+<div style="margin-top:1.25rem;">
+  <h3 style="color:#e2e8f0; margin-bottom:0.75rem;">Test results ({{ test_results|length }})</h3>
+  {% if test_results %}
+    {% for job in test_results %}
+    <div style="background:#1a202c; border:1px solid #2d3748; border-radius:6px; padding:1rem; margin-bottom:0.75rem;">
+      <div style="font-size:1rem; font-weight:600; color:#e2e8f0;">
+        {{ job.role }}
+        {% if job.company %}<span style="color:#a0aec0;"> @ {{ job.company }}</span>{% endif %}
+        {% if job.location %}<span style="color:#718096;"> · {{ job.location }}</span>{% endif %}
+      </div>
+      <a href="{{ job.url }}" target="_blank" rel="noopener"
+         style="color:#5b6ef5; font-size:0.85rem; text-decoration:none; display:inline-block; margin-top:0.4rem;">
+        View on {{ job.source }} →
+      </a>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No results found for your current searches/location.</p>
+  {% endif %}
+</div>
+{% endif %}
+
 <hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
 
 {% set day_labels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] %}
@@ -86,11 +116,19 @@
     </label>
     {% endfor %}
   </div>
-  <button class="btn" type="submit">Save Schedule</button>
+
+  <label for="delivery_hour" style="display:block; margin-bottom:0.4rem;">Delivery time (Pacific)</label>
+  <select name="delivery_hour" id="delivery_hour">
+    {% for value, label in hour_choices %}
+      <option value="{{ value }}" {% if (user.delivery_hour or 7) == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+
+  <button class="btn" type="submit" style="margin-top:0.75rem;">Save Schedule</button>
 </form>
 
 <p class="muted" style="font-size:0.8rem; margin-top:0.75rem;">
-  Digests go out once a day at 14:00 UTC — that's 7am Pacific Daylight Time (summer) or 6am Pacific Standard Time (winter), whichever is currently in effect. Saving a change here doesn't send anything right away — it takes effect at the next run on one of your selected days, which could be tomorrow or up to a week away depending on what you picked.
+  Your digest goes out at your chosen Pacific time, every day you've selected — correct year-round through daylight saving changes. Saving a change here doesn't send anything right away — it takes effect at the next run on one of your selected days, which could be tomorrow or up to a week away depending on what you picked.
 </p>
 
 <hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
@@ -109,6 +147,49 @@
     <p class="muted" style="font-size:0.8rem; margin-top:-0.5rem;">Free text isn't checked against anything — double-check the spelling, or LinkedIn may quietly return unrelated results.</p>
   </div>
   <button class="btn" type="submit">Save Location</button>
+</form>
+
+<hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
+
+<details>
+  <summary style="cursor:pointer; color:#a0aec0; font-size:1.1rem; margin-bottom:0.75rem;">Account settings</summary>
+
+  <form method="POST" action="/account/name">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ user.name }}" required>
+    <button class="btn" type="submit">Save Name</button>
+  </form>
+
+  <form method="POST" action="/account/password" style="margin-top:1.25rem;">
+    <label for="current_password">Current password</label>
+    <input type="password" id="current_password" name="current_password" required>
+
+    <label for="new_password">New password <span class="muted">(at least 8 characters)</span></label>
+    <input type="password" id="new_password" name="new_password" required minlength="8">
+
+    <label for="confirm_new_password">Confirm new password</label>
+    <input type="password" id="confirm_new_password" name="confirm_new_password" required minlength="8">
+
+    <button class="btn" type="submit">Change Password</button>
+  </form>
+</details>
+
+<hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
+
+<h2>Manage subscription</h2>
+{% if user.active %}
+  <form method="POST" action="/account/close">
+    <button class="btn" type="submit" name="mode" value="pause" style="background:#2d3748;">Pause digests</button>
+  </form>
+{% else %}
+  <p class="muted" style="margin-bottom:0.75rem;">Your digests are currently paused.</p>
+  <form method="POST" action="/account/resume">
+    <button class="btn" type="submit">Resume digests</button>
+  </form>
+{% endif %}
+<form method="POST" action="/account/close" style="margin-top:0.75rem;"
+      onsubmit="return confirm('Delete your account and saved searches? This can\'t be undone, but you can sign up again with the invite code we\'ll email you.');">
+  <button class="btn" type="submit" name="mode" value="delete" style="background:#822727;">Delete my account</button>
 </form>
 
 <hr style="border:none; border-top:1px solid #2d3748; margin:1.5rem 0;">
