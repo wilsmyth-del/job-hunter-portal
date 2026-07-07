@@ -46,11 +46,12 @@ Set in PythonAnywhere's `.env` or environment config — never committed.
 2. Create a virtualenv and `pip install -r requirements.txt`
 3. Set the four environment variables above
 4. Point the WSGI file at `app.py`
-5. Add a daily scheduled task: `python3 /home/<user>/job-hunter-portal/scraper.py` at 14:00 UTC (6 am PST)
+5. Add an hourly scheduled task: `python3 /home/<user>/job-hunter-portal/scraper.py` at :00 past every hour
+6. After pulling code changes, click **Reload** on the Web tab — a `git pull` alone doesn't restart the running app
 
 ## Scraper behaviour
 
-- Runs once daily via PythonAnywhere scheduled tasks
+- Runs hourly via a PythonAnywhere scheduled task; each user is delivered at their own chosen Pacific hour (`delivery_hour`), computed via `zoneinfo` so it's correct through DST automatically
 - Fetches LinkedIn guest API (no key required) — 2 pages per query
 - Filters a blocklist of aggregator domains (Jooble, Talent.com, etc.)
 - Per-user deduplication via `seen_jobs` table — users only ever see each listing once
