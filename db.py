@@ -69,11 +69,29 @@ def init_db():
             "ALTER TABLE users ADD COLUMN last_run_date TEXT",
             "ALTER TABLE users ADD COLUMN reset_token TEXT",
             "ALTER TABLE users ADD COLUMN reset_token_expires TEXT",
+            # Per-search location. Users used to get one location on their
+            # profile applied to every search; now each search carries its own,
+            # so "Project Manager in Vancouver" and "Warehouse in Burnaby" can
+            # coexist. users.location stays on as the default for new rows.
+            "ALTER TABLE queries ADD COLUMN location TEXT NOT NULL DEFAULT ''",
         ]:
             try:
                 conn.execute(col_sql)
             except Exception:
                 pass
+
+        # Backfill: give every pre-existing search the location it was already
+        # being run with (the owner's profile location). Without this the ALTER
+        # above would silently widen everyone's searches to no location at all.
+        # Only touches blanks, so it's safe to re-run on every startup.
+        conn.execute(
+            """
+            UPDATE queries
+               SET location = COALESCE(
+                   (SELECT location FROM users WHERE users.id = queries.user_id), '')
+             WHERE location = ''
+            """
+        )
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -214,23 +232,36 @@ def mark_seen_for_user(user_id: int, job_id: str):
 # ── Queries ───────────────────────────────────────────────────────────────────
 
 def get_queries_for_user(user_id: int) -> list:
+    """Returns [{"query": str, "location": str}, ...] — one location per
+    search, not one per user. Dicts rather than tuples so /api/users can
+    jsonify them directly."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT query_string FROM queries WHERE user_id = ?", (user_id,)
+            "SELECT query_string, location FROM queries WHERE user_id = ?",
+            (user_id,),
         ).fetchall()
-        return [r["query_string"] for r in rows]
+        return [
+            {"query": r["query_string"], "location": r["location"]} for r in rows
+        ]
 
 
-def set_queries_for_user(user_id: int, query_strings: list):
-    """Replace all queries for a user (max 8)."""
+def set_queries_for_user(user_id: int, queries: list, default_location: str = ""):
+    """Replace all queries for a user (max 8).
+
+    `queries` is a list of (query_string, location) pairs. A blank location
+    falls back to `default_location` (the user's profile location) rather than
+    being stored empty, since an empty location silently widens the search to
+    everywhere.
+    """
     with get_conn() as conn:
         conn.execute("DELETE FROM queries WHERE user_id = ?", (user_id,))
-        for q in query_strings[:8]:
-            q = q.strip()
+        for q, loc in queries[:8]:
+            q = (q or "").strip()
+            loc = (loc or "").strip() or default_location
             if q:
                 conn.execute(
-                    "INSERT INTO queries (user_id, query_string) VALUES (?, ?)",
-                    (user_id, q),
+                    "INSERT INTO queries (user_id, query_string, location) VALUES (?, ?, ?)",
+                    (user_id, q, loc),
                 )
 
 

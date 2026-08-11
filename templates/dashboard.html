@@ -27,19 +27,24 @@
 <h2>Your search queries</h2>
 <div style="background:#1a202c; border:1px solid #2d3748; border-radius:6px; padding:1rem 1.2rem; margin-bottom:1rem; font-size:0.85rem; color:#a0aec0; line-height:1.6;">
   <strong style="color:#e2e8f0;">How to write a good search</strong><br>
-  Each field is one search — a job title or keyword, optionally followed by a location.<br><br>
+  Each row is one search: a job title or keyword, plus the location to search it in.
+  <strong style="color:#e2e8f0;">Every search can use a different location</strong> — so you can
+  look for one role near home and another across town.<br><br>
   <span style="color:#e2e8f0;">Examples:</span><br>
-  &bull; <code style="color:#63b3ed;">UX Designer Vancouver</code> — title + city<br>
-  &bull; <code style="color:#63b3ed;">Software Engineer remote</code> — title + work type<br>
-  &bull; <code style="color:#63b3ed;">Product Manager BC</code> — title + region<br><br>
-  You don't need to use all 6. Uncheck any field to skip it.
+  &bull; <code style="color:#63b3ed;">UX Designer</code> in <code style="color:#63b3ed;">Vancouver, BC</code><br>
+  &bull; <code style="color:#63b3ed;">Warehouse Associate</code> in <code style="color:#63b3ed;">Burnaby</code><br>
+  &bull; <code style="color:#63b3ed;">Software Engineer remote</code> in <code style="color:#63b3ed;">BC</code><br><br>
+  Leave a location blank and it uses your profile location ({{ user.location }}).
+  You don't need to use all 6 — uncheck any row to skip it.
 </div>
 
 <form method="POST" action="/queries">
   {% for i in range(1, 7) %}
-  {% set val = queries[i-1] if queries|length >= i else '' %}
+  {% set row = queries[i-1] if queries|length >= i else None %}
+  {% set val = row.query if row else '' %}
+  {% set loc = row.location if row else '' %}
   {% set active = val != '' or queries|length == 0 %}
-  <div class="query-row" style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
+  <div class="query-row" style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem; flex-wrap:wrap;">
     <input type="checkbox"
            name="query_{{ i }}_enabled"
            class="query-toggle"
@@ -50,9 +55,16 @@
            name="query_{{ i }}"
            id="query_{{ i }}"
            value="{{ val }}"
-           placeholder="e.g. UX Designer Vancouver"
+           placeholder="Job title or keyword"
            {% if not active %}disabled{% endif %}
-           style="margin-bottom:0; flex:1; opacity:{% if active %}1{% else %}0.3{% endif %};">
+           style="margin-bottom:0; flex:2 1 12rem; opacity:{% if active %}1{% else %}0.3{% endif %};">
+    <input type="text"
+           name="query_{{ i }}_location"
+           id="query_{{ i }}_location"
+           value="{{ loc }}"
+           placeholder="Location (defaults to {{ user.location }})"
+           {% if not active %}disabled{% endif %}
+           style="margin-bottom:0; flex:1 1 10rem; opacity:{% if active %}1{% else %}0.3{% endif %};">
   </div>
   {% endfor %}
   <button class="btn" type="submit" style="margin-top:0.5rem;">Save Searches</button>
@@ -202,9 +214,13 @@
   document.querySelectorAll('.query-toggle').forEach(function(cb) {
     cb.addEventListener('change', function() {
       var row = this.closest('.query-row');
-      var input = row.querySelector('input[type="text"]');
-      input.disabled = !this.checked;
-      input.style.opacity = this.checked ? '1' : '0.3';
+      // querySelectorAll, not querySelector — each row now has two text
+      // inputs (title and location) and both must follow the toggle.
+      var checked = this.checked;
+      row.querySelectorAll('input[type="text"]').forEach(function(input) {
+        input.disabled = !checked;
+        input.style.opacity = checked ? '1' : '0.3';
+      });
     });
   });
 

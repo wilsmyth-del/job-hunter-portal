@@ -212,20 +212,23 @@ def main():
 
     for user in today_users:
         queries = get_queries_for_user(user["id"])
-        location = user["location"]
 
         if not queries:
             log.info(f"No queries for {user['email']} — skipping")
             mark_run_today(user["id"])
             continue
 
-        log.info(f"{user['email']}: {len(queries)} queries, location={location!r}")
+        log.info(f"{user['email']}: {len(queries)} queries")
 
         all_jobs: list[dict] = []
         seen_urls: set[str] = set()
 
-        for query in queries[:6]:
-            for job in fetch_linkedin(query, location):
+        for q in queries[:6]:
+            # Location is per-search now, not per-user. The profile location
+            # is only a fallback for rows stored before the migration or saved
+            # blank; it is no longer applied to every search.
+            location = q["location"] or user["location"]
+            for job in fetch_linkedin(q["query"], location):
                 if job["url"] in seen_urls or is_blocked(job):
                     continue
                 seen_urls.add(job["url"])

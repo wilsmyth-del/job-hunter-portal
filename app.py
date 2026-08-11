@@ -195,16 +195,20 @@ def queries():
     user_id = session.get("user_id")
     if not user_id:
         return redirect(url_for("login_get"))
+    user = db.get_user_by_id(user_id)
     query_list = []
     for i in range(1, 7):
         enabled = request.form.get(f"query_{i}_enabled")
         val = request.form.get(f"query_{i}", "").strip()
+        loc = request.form.get(f"query_{i}_location", "").strip()
         if enabled and val:
-            query_list.append(val)
+            query_list.append((val, loc))
     if not query_list:
         flash("Please enable and fill in at least one search query.", "queries")
         return redirect(url_for("dashboard"))
-    db.set_queries_for_user(user_id, query_list)
+    # Blank per-search locations fall back to the profile location, which is
+    # what every search used before locations became per-row.
+    db.set_queries_for_user(user_id, query_list, default_location=user["location"])
     return redirect(url_for("dashboard"))
 
 
@@ -222,7 +226,9 @@ def search_test():
     seen_urls = set()
     test_results = []
     for q in query_list[:6]:
-        for job in fetch_linkedin(q, user["location"]):
+        # Each search carries its own location; fall back to the profile
+        # location if one was somehow stored blank.
+        for job in fetch_linkedin(q["query"], q["location"] or user["location"]):
             if job["url"] in seen_urls or is_blocked(job):
                 continue
             seen_urls.add(job["url"])
