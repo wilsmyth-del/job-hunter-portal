@@ -173,7 +173,13 @@ def fetch_adzuna(query: str, location: str):
     tell users there were no jobs when we simply never found out.
     """
     if not ADZUNA_APP_ID or not ADZUNA_APP_KEY:
-        return None  # not configured — not the same as "nothing found"
+        # Say so out loud. This is read at import, so a worker started before
+        # the .env was complete keeps None even once the file is correct —
+        # which looks exactly like a network failure from the outside, and
+        # cost a debugging round on 2026-08-12. Not the same as "nothing found".
+        log.warning("Adzuna credentials not loaded (ADZUNA_APP_ID/ADZUNA_APP_KEY) — "
+                    "skipping Adzuna. If .env is correct, the worker predates it: reload.")
+        return None
 
     data = _adzuna_call(query, location)
     for delay in ADZUNA_RETRY_DELAYS:
