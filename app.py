@@ -40,7 +40,7 @@ from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
 
 import db
-from scraper import fetch_linkedin, is_blocked
+from scraper import fetch_all_sources
 from tokens import unsubscribe_token, user_id_from_token
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -228,8 +228,10 @@ def search_test():
     for q in query_list[:6]:
         # Each search carries its own location; fall back to the profile
         # location if one was somehow stored blank.
-        for job in fetch_linkedin(q["query"], q["location"] or user["location"]):
-            if job["url"] in seen_urls or is_blocked(job):
+        # Same multi-source path the digest uses, so the preview reflects
+        # what would actually be sent rather than LinkedIn alone.
+        for job in fetch_all_sources(q["query"], q["location"] or user["location"]):
+            if job["url"] in seen_urls:
                 continue
             seen_urls.add(job["url"])
             test_results.append(job)

@@ -7,6 +7,7 @@ run today, fetches LinkedIn jobs for them, filters against their personal
 seen-job history, and emails new listings.
 """
 
+import json
 import logging
 import os
 import re
@@ -14,6 +15,7 @@ import smtplib
 import time
 import urllib.parse
 import urllib.request
+from collections import Counter
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -54,6 +56,27 @@ BLOCKED_DOMAINS = {
     "simplyhired.ca", "adzuna.com", "adzuna.ca", "jobleads.com",
     "learn4good.com", "recruit.net", "jobomas.com",
 }
+
+# A domain on the blocklist is only junk when it turns up as a *third-party*
+# redirect inside someone else's results. Adzuna was blocklisted because it
+# appeared that way inside JSearch output — but going direct to Adzuna's own
+# API returns first-party inventory whose redirect_url is adzuna.ca by design.
+# Without this, every Adzuna result would be silently discarded by is_blocked.
+SOURCE_OWN_DOMAINS = {
+    "LinkedIn": {"linkedin.com"},
+    "Adzuna": {"adzuna.com", "adzuna.ca"},
+}
+
+# ── Adzuna ─────────────────────────────────────────────────────────────────────
+
+ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID")
+ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY")
+ADZUNA_BASE = "https://api.adzuna.com/v1/api/jobs/ca/search/1"
+# The 2026-07-07→21 pilot saw ~19% of calls return a transient 503 from
+# Adzuna's own infrastructure (an HTML error page, not JSON), and a single
+# 2s retry did not reliably recover it. Hence three attempts with widening
+# backoff, and a hard distinction between "failed" and "no results".
+ADZUNA_RETRY_DELAYS = (2, 5)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -115,11 +138,119 @@ def fetch_linkedin(query: str, location: str = "") -> list[dict]:
     return jobs
 
 
-# ── Filtering ──────────────────────────────────────────────────────────────────
+def _adzuna_call(query: str, location: str):
+    """One request. Returns parsed JSON, or None if the call failed."""
+    params = urllib.parse.urlencode({
+        "app_id": ADZUNA_APP_ID,
+        "app_key": ADZUNA_APP_KEY,
+        "what": query,
+        "where": location,
+        "results_per_page": "20",
+        # Adzuna defaults to relevance, which mixes year-old postings in with
+        # today's. Confirmed during research: without this you get a 2026-07-05
+        # listing sitting next to a 2025-02-16 one on the same page.
+        "sort_by": "date",
+        "content-type": "application/json",
+    })
+    req = urllib.request.Request(
+        f"{ADZUNA_BASE}?{params}", headers={"User-Agent": "job-finder-portal/1.0"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            if r.status != 200:
+                return None
+            return json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        log.warning(f"Adzuna call failed for '{query}' @ '{location}': {e}")
+        return None
+
+
+def fetch_adzuna(query: str, location: str):
+    """Returns a list of jobs, or **None** if every attempt failed.
+
+    The None-vs-[] distinction is the whole point: at Adzuna's observed
+    failure rate, collapsing a failed call into "no results" would silently
+    tell users there were no jobs when we simply never found out.
+    """
+    if not ADZUNA_APP_ID or not ADZUNA_APP_KEY:
+        return None  # not configured — not the same as "nothing found"
+
+    data = _adzuna_call(query, location)
+    for delay in ADZUNA_RETRY_DELAYS:
+        if data is not None:
+            break
+        time.sleep(delay)
+        data = _adzuna_call(query, location)
+
+    if data is None:
+        log.warning(f"Adzuna gave up after {len(ADZUNA_RETRY_DELAYS) + 1} attempts: "
+                    f"'{query}' @ '{location}' — treating as unknown, not empty")
+        return None
+
+    jobs = []
+    for r in data.get("results", []):
+        job_id = r.get("id")
+        url = r.get("redirect_url")
+        if not job_id or not url:
+            continue
+        loc = r.get("location") or {}
+        area = loc.get("area") or []
+        jobs.append({
+            "id": f"adzuna_{job_id}",
+            "role": (r.get("title") or "").strip(),
+            "company": ((r.get("company") or {}).get("display_name") or "").strip(),
+            # display_name isn't always present; the area list is ordered
+            # broad→specific, so the tail is the most useful fallback.
+            "location": (loc.get("display_name") or ", ".join(area[-2:])).strip(),
+            "url": url,
+            "source": "Adzuna",
+        })
+    return jobs
+
+
+# ── Filtering & cross-source dedup ─────────────────────────────────────────────
 
 def is_blocked(job: dict) -> bool:
     url = job.get("url", "").lower()
-    return any(domain in url for domain in BLOCKED_DOMAINS)
+    own = SOURCE_OWN_DOMAINS.get(job.get("source"), set())
+    return any(domain in url for domain in BLOCKED_DOMAINS if domain not in own)
+
+
+def dedupe_key(job: dict):
+    """Normalised (role, company) — the same posting on two boards has
+    different ids and different URLs, so neither of those can catch it."""
+    def norm(s):
+        return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+    return norm(job.get("role")), norm(job.get("company"))
+
+
+def fetch_all_sources(query: str, location: str) -> list:
+    """Both sources for one search, cross-source duplicates collapsed.
+
+    LinkedIn runs first and wins ties, so results stay stable for users who
+    are used to them. A dropped duplicate's id is carried on the survivor as
+    `alias_ids`, so marking the survivor seen also suppresses the twin —
+    otherwise the same job reappears as "new" the day one source drops it.
+    """
+    jobs, by_key = [], {}
+    adzuna = fetch_adzuna(query, location)
+    if adzuna is None:
+        log.info(f"Adzuna unavailable for '{query}' @ '{location}' — LinkedIn only this run")
+
+    for job in list(fetch_linkedin(query, location)) + list(adzuna or []):
+        if is_blocked(job):
+            continue
+        key = dedupe_key(job)
+        # An empty role or company makes the key useless — keep those rather
+        # than collapsing unrelated postings together.
+        if all(key) and key in by_key:
+            by_key[key].setdefault("alias_ids", []).append(job["id"])
+            continue
+        job.setdefault("alias_ids", [])
+        if all(key):
+            by_key[key] = job
+        jobs.append(job)
+    return jobs
 
 
 # ── Email ──────────────────────────────────────────────────────────────────────
@@ -228,19 +359,25 @@ def main():
             # is only a fallback for rows stored before the migration or saved
             # blank; it is no longer applied to every search.
             location = q["location"] or user["location"]
-            for job in fetch_linkedin(q["query"], location):
-                if job["url"] in seen_urls or is_blocked(job):
+            for job in fetch_all_sources(q["query"], location):
+                if job["url"] in seen_urls:
                     continue
                 seen_urls.add(job["url"])
                 all_jobs.append(job)
             time.sleep(0.5)
 
         new_jobs = [j for j in all_jobs if not is_seen_for_user(user["id"], j["id"])]
-        log.info(f"{user['email']}: {len(all_jobs)} fetched, {len(new_jobs)} new")
+        by_source = Counter(j["source"] for j in all_jobs)
+        log.info(f"{user['email']}: {len(all_jobs)} fetched ({dict(by_source)}), "
+                 f"{len(new_jobs)} new")
 
         if new_jobs:
             for job in new_jobs:
                 mark_seen_for_user(user["id"], job["id"])
+                # Also suppress the same posting as seen from the other
+                # source, so it doesn't resurface as "new" later.
+                for alias in job.get("alias_ids", []):
+                    mark_seen_for_user(user["id"], alias)
             send_digest(user, new_jobs)
         else:
             log.info(f"Nothing new for {user['email']}")
