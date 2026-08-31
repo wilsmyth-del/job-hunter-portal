@@ -1,6 +1,6 @@
-# Job Finder Portal
+# Job Hunter Portal
 
-Invite-only job digest service. Users set up search queries and a delivery schedule; an hourly scraper fetches LinkedIn listings and emails new results at each user's own chosen Pacific hour.
+Invite-only job digest service. Users set up searches and a delivery schedule; an hourly scraper gathers LinkedIn and Adzuna listings and emails new results.
 
 ---
 
